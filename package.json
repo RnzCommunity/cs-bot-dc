@@ -1,0 +1,16 @@
+{
+  "name": "cs-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot pembuat character story dengan gaya tulisan manusia",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3"
+  }
+}
