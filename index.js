@@ -140,7 +140,7 @@ async function callGemini({ system, user, temperature = 1 }) {
     throw new Error(`Gemini kosong: ${JSON.stringify(data.promptFeedback || data.candidates?.[0]?.finishReason || 'unknown')}`);
   }
   return text;
-}
+  }
 
 /* ------------------------------------------------------------------ */
 /* Helper                                                              */
@@ -197,7 +197,7 @@ async function generateStory(data) {
   const ageNum = parseInt(data.age, 10);
   const info = [
     `Nama karakter: ${data.name}`,
-    `Umur: ${data.age}${Number.isFinite(ageNum) ? ` (kira-kira lahir tahun ${year - ageNum})` : ''}`,
+    `Umur: \( {data.age} \){Number.isFinite(ageNum) ? ` (kira-kira lahir tahun ${year - ageNum})` : ''}`,
     `Jenis kelamin: ${normalizeGender(data.gender)}`,
     `Latar belakang kehidupan: ${data.latar}`,
     `Vibe kepribadian: ${data.vibe}`,
@@ -216,7 +216,7 @@ async function generateStory(data) {
 
   const rewritten = await callGemini({
     system: buildRewriteRules(data.bahasa, data.paragraf),
-    user: `Fakta karakter (jangan diubah):\n${info}\n\nTeks yang harus ditulis ulang:\n\n${draft}`,
+    user: `Fakta karakter (jangan diubah):\n\( {info}\n\nTeks yang harus ditulis ulang:\n\n \){draft}`,
     temperature: 1,
   });
 
@@ -227,9 +227,9 @@ async function generateStory(data) {
 /* State di memori                                                     */
 /* ------------------------------------------------------------------ */
 
-const prefs = new Map(); // userId -> { latar, vibe, bahasa, paragraf }
-const sessions = new Map(); // key -> { data, userId }
-const lastUse = new Map(); // userId -> timestamp
+const prefs = new Map();
+const sessions = new Map();
+const lastUse = new Map();
 
 function getPrefs(userId) {
   if (!prefs.has(userId)) prefs.set(userId, {});
@@ -247,7 +247,7 @@ function saveSession(data, userId) {
 function cooldownLeft(userId) {
   const left = COOLDOWN_MS - (Date.now() - (lastUse.get(userId) || 0));
   return left > 0 ? Math.ceil(left / 1000) : 0;
-}
+          }
 
 /* ------------------------------------------------------------------ */
 /* UI                                                                  */
@@ -363,7 +363,13 @@ async function runGeneration(interaction, data, userId) {
 /* Bot                                                                 */
 /* ------------------------------------------------------------------ */
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Login sebagai ${c.user.tag}`);
@@ -392,19 +398,16 @@ const SELECT_KEYS = { cs_latar: 'latar', cs_vibe: 'vibe', cs_bahasa: 'bahasa', c
 
 client.on(Events.InteractionCreate, async (i) => {
   try {
-    // /panel
     if (i.isChatInputCommand() && i.commandName === 'panel') {
       await i.reply({ content: 'Panel dikirim.', ephemeral: true });
       return await i.channel.send({ embeds: [panelEmbed()], components: panelComponents() });
     }
 
-    // Select menu: simpan pilihan user
     if (i.isStringSelectMenu() && SELECT_KEYS[i.customId]) {
       getPrefs(i.user.id)[SELECT_KEYS[i.customId]] = i.values[0];
       return await i.deferUpdate();
     }
 
-    // Tombol Buat Karakter -> buka form
     if (i.isButton() && i.customId === 'cs_open') {
       const p = getPrefs(i.user.id);
       const missing = [];
@@ -420,7 +423,6 @@ client.on(Events.InteractionCreate, async (i) => {
       return await i.showModal(buildModal());
     }
 
-    // Submit form -> generate
     if (i.isModalSubmit() && i.customId === 'cs_modal') {
       const p = getPrefs(i.user.id);
       if (!p.latar || !p.vibe || !p.bahasa || !p.paragraf) {
@@ -442,7 +444,6 @@ client.on(Events.InteractionCreate, async (i) => {
       return await runGeneration(i, data, i.user.id);
     }
 
-    // Generate ulang
     if (i.isButton() && i.customId.startsWith('cs_regen:')) {
       const session = sessions.get(i.customId.split(':')[1]);
       if (!session) return await i.reply({ content: 'Sesi kedaluwarsa, klik Buat Karakter lagi di panel.', ephemeral: true });
@@ -453,6 +454,31 @@ client.on(Events.InteractionCreate, async (i) => {
     }
   } catch (e) {
     console.error('Interaction error:', e);
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* Prefix Command !panel                                               */
+/* ------------------------------------------------------------------ */
+
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
+  if (message.content !== '!panel') return;
+
+  if (!message.member?.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    return message.reply({
+      content: 'Kamu tidak punya izin untuk menggunakan command ini.',
+      allowedMentions: { repliedUser: false },
+    });
+  }
+
+  try {
+    await message.channel.send({
+      embeds: [panelEmbed()],
+      components: panelComponents(),
+    });
+  } catch (err) {
+    console.error('Gagal kirim panel:', err);
   }
 });
 
